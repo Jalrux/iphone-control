@@ -1,0 +1,12 @@
+diff --git i/crates/plume_utils/src/bundle.rs w/crates/plume_utils/src/bundle.rs
+index 4dc9769..9c7edb8 100644
+--- i/crates/plume_utils/src/bundle.rs
++++ w/crates/plume_utils/src/bundle.rs
+@@ -276,6 +276,7 @@ impl BundleType {
+             "app" => Some(BundleType::App),
+             "appex" => Some(BundleType::AppExtension),
+             "framework" => Some(BundleType::Framework),
++            "xctest" => Some(BundleType::Framework), // test bundles (WebDriverAgent): signed like a framework
+             "dylib" => Some(BundleType::Dylib),
+             _ => Some(BundleType::Unknown),
+         }

@@ -1,0 +1,11 @@
+# built / downloaded by setup.sh and resign.sh
+build/
+# machine state never belongs here (kept in ~/.local/state/iphone-control): pairing keys, Apple ID data
+selfIdentity.plist
+*.plist
+config.json
+# screen recordings (python3 -m iphone_control.screencap --record OUT.h264 --wav OUT.pcm) show the phone's screen
+*.h264
+*.pcm
+__pycache__/
+*.pyc

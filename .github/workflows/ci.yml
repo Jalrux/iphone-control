@@ -1,0 +1,168 @@
+# Lint, unit + script tests (Python 3.9-3.13, x86_64 + aarch64), the real GTK window under Xvfb, and
+# setup.sh's package detection on each mainstream distro. No job touches an iPhone, usbmuxd or Apple:
+# the script tests run against fakes (tests/scriptenv.py).
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - name: shellcheck
+        run: |
+          shellcheck --version
+          shellcheck -x iphone.sh resign.sh setup.sh uninstall.sh certs/ca-bundle.sh
+      - name: bash -n
+        run: for f in *.sh certs/*.sh; do bash -n "$f" || exit 1; done
+      - name: every Python file compiles on 3.9
+        run: python -m compileall -q -f . && python -c "import sys; assert sys.version_info[:2] == (3, 9)"
+      - name: the USB capture, video and Bluetooth modules are there and compile on 3.9
+        run: >
+          python -m py_compile iphone_control/usbfs.py iphone_control/valeria.py iphone_control/screencap.py
+          iphone_control/video.py iphone_control/hid.py iphone_control/blehid.py
+
+  test:
+    name: tests (Python ${{ matrix.python }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python: ["3.9", "3.11", "3.12", "3.13"]
+        include:
+          - os: ubuntu-latest
+            python: "3.12"
+            slow: "1"               # also the ~60 s tunnel-timeout scenarios
+          - os: ubuntu-24.04-arm
+            python: "3.12"
+          - os: ubuntu-22.04
+            python: "3.10"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: tools the scripts use
+        run: |
+          for t in bash curl flock timeout ss sha256sum; do command -v "$t" || { echo "missing: $t"; exit 1; }; done
+      - name: unit and script tests
+        # PyGObject is not installed for setup-python's interpreter: the window tests skip themselves here
+        env:
+          IPHONE_SLOW_TESTS: ${{ matrix.slow || '0' }}
+          # optional repo secret: extra names the privacy test must not find (hostnames, handles)
+          IPHONE_PRIVACY_WORDS: ${{ secrets.IPHONE_PRIVACY_WORDS }}
+        run: python -X dev -W error::ResourceWarning -m unittest discover -s tests -v
+
+  window:
+    name: window (GTK + GStreamer under Xvfb)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: install the window's packages (README line for Debian/Ubuntu, with H.264 for USB video) + Xvfb + D-Bus
+        # dbus: the Bluetooth LE tests run a fake BlueZ on a private bus, never the system's
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3-gi gir1.2-gtk-3.0 gir1.2-gstreamer-1.0 \
+            gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav \
+            gstreamer1.0-gtk3 dbus xvfb xauth
+      - name: GStreamer elements
+        run: >
+          /usr/bin/python3 -c "import gi; gi.require_version('Gst','1.0'); gi.require_version('Gtk','3.0');
+          from gi.repository import Gst; Gst.init(None);
+          m=[e for e in ('souphttpsrc','multipartdemux','jpegdec','videoconvert','gtksink','appsrc','h264parse',
+          'avdec_h264','udpsrc','rtph264depay') if not Gst.ElementFactory.find(e)];
+          assert not m, m"
+      - name: window, video and Bluetooth LE tests with a real (never mapped) GTK window, then everything else
+        env:
+          IPHONE_TEST_WINDOW: "1"
+        run: xvfb-run -a /usr/bin/python3 -X dev -m unittest discover -s tests -v
+
+  distro:
+    # setup.sh --check prints the install line for this distro; installing exactly that line must make
+    # the package check pass, then the whole suite runs on the distro's own Python.
+    name: setup.sh on ${{ matrix.image }} (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {image: "debian:12", runner: ubuntu-latest, family: deb}
+          - {image: "debian:13", runner: ubuntu-latest, family: deb}
+          - {image: "ubuntu:22.04", runner: ubuntu-latest, family: deb}
+          - {image: "ubuntu:24.04", runner: ubuntu-latest, family: deb}
+          - {image: "ubuntu:24.04", runner: ubuntu-24.04-arm, family: deb}
+          - {image: "fedora:latest", runner: ubuntu-latest, family: rpm}
+          - {image: "fedora:latest", runner: ubuntu-24.04-arm, family: rpm}
+          - {image: "opensuse/tumbleweed", runner: ubuntu-latest, family: suse}
+          - {image: "archlinux:latest", runner: ubuntu-latest, family: arch}
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      TZ: UTC
+    steps:
+      - name: bootstrap (what actions/checkout and the scripts need before setup.sh can run)
+        run: |
+          case "${{ matrix.family }}" in
+            deb) apt-get update && apt-get install -y --no-install-recommends ca-certificates tar gzip procps ;;
+            rpm) dnf install -y findutils gawk tar gzip util-linux procps-ng ;;
+            suse) zypper -n install findutils gawk tar gzip util-linux procps ;;
+            arch) pacman -Syu --noconfirm --needed tar gzip findutils gawk ;;
+          esac
+      - uses: actions/checkout@v4
+      - name: install exactly what setup.sh --check asks for
+        shell: bash
+        run: |
+          case "${{ matrix.family }}" in
+            deb) cmd="apt install"; pm_install() { apt-get install -y --no-install-recommends "$@"; } ;;
+            rpm) cmd="dnf install"; pm_install() { dnf install -y "$@"; } ;;
+            suse) cmd="zypper install"; pm_install() { zypper -n install "$@"; } ;;
+            arch) cmd="pacman -S --needed"; pm_install() { pacman -S --noconfirm --needed "$@"; } ;;
+          esac
+          # the probe is staged (python3 -> gi -> GTK + GStreamer -> plugins), so a bare image needs
+          # several rounds; stop as soon as a check asks for nothing more
+          check() {
+            ./setup.sh --check >check.txt 2>&1 || true
+            cat check.txt
+            grep -q "== system packages (${{ matrix.family }}, " check.txt || { echo "wrong distro family"; exit 1; }
+          }
+          for round in 1 2 3 4 5; do
+            check
+            pkgs=$(sed -n "s/^install with:  \(sudo \)\{0,1\}$cmd //p" check.txt)
+            [ -n "$pkgs" ] || break
+            echo "round $round: installing: $pkgs"
+            # shellcheck disable=SC2086
+            pm_install $pkgs
+          done
+          # the asserts below must read a check made after the last install
+          echo "final check:"
+          check
+          if grep -q '^install with:' check.txt; then echo "setup.sh still asks for packages"; exit 1; fi
+          if grep -E '^missing' check.txt; then echo "setup.sh still reports missing packages"; exit 1; fi
+          grep -A1 '== system packages' check.txt | grep -Eq '^ok \(python: |^Rust >= ' || exit 1
+      - name: the window's GStreamer elements are there
+        run: >
+          python3 -c "import gi; gi.require_version('Gst','1.0'); gi.require_version('Gtk','3.0');
+          from gi.repository import Gst; Gst.init(None);
+          m=[e for e in ('souphttpsrc','multipartdemux','jpegdec','videoconvert','gtksink') if not Gst.ElementFactory.find(e)];
+          assert not m, m"
+      - name: tests on the distro's Python
+        shell: bash
+        run: |
+          command -v curl timeout
+          python3 --version
+          python3 -m unittest discover -s tests -v

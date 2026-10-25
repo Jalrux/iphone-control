@@ -1,0 +1,13 @@
+diff --git i/3rdparty/omnisette/src/remote_anisette_v3.rs w/3rdparty/omnisette/src/remote_anisette_v3.rs
+index 014689a..4ab7037 100755
+--- i/3rdparty/omnisette/src/remote_anisette_v3.rs
++++ w/3rdparty/omnisette/src/remote_anisette_v3.rs
+@@ -194,7 +194,7 @@ impl AnisetteClient {
+             .await?
+             .json::<AnisetteClientInfo>()
+             .await?;
+-        client_info.client_info = CLIENT_INFO_HEADER.to_string();
++        // use the anisette server's own (Mac) client info - mixing it with the Windows one fails (-80046)
+         Ok(AnisetteClient { client_info, url })
+     }
+ 
