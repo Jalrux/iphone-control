@@ -324,12 +324,15 @@ if [ $USBMUXD = 1 ]; then
     echo "  USBMUXD_DEFAULT_DEVICE_MODE=2 $MUX_BIN --user $(mux_user)"
     exit 0
   fi
-  # explicit modes (install -D makes missing directories 755): sudo keeps a stricter umask of the user's, and a
-  # usbmuxd.service.d only root can search hides the override from every check that runs as the user (this
-  # script's, iphone.sh's, uninstall.sh's); a+rx also opens one that was made that way before
-  as_root install -D -m755 "$src/src/usbmuxd" "$MUX_BIN"
-  mux_dropin | as_root install -D -m644 /dev/stdin "$MUX_DROPIN"
-  as_root chmod a+rx "$(dirname "$MUX_DROPIN")"
+  # explicit modes, never the umask's: sudo keeps a stricter umask of the user's, and a usbmuxd.service.d only
+  # root can search hides the override from every check that runs as the user (this script's, iphone.sh's,
+  # uninstall.sh's). GNU install -D makes missing directories 755, but uutils' (Ubuntu 26.04's coreutils) applies
+  # the umask, so the directories are made here first; an existing /usr/local/sbin (Debian's is 2775) is left alone
+  [ -d "$(dirname "$MUX_BIN")" ] || as_root mkdir -m755 "$(dirname "$MUX_BIN")"
+  as_root mkdir -p "$(dirname "$MUX_DROPIN")"
+  as_root chmod 755 "$(dirname "$MUX_DROPIN")"      # also opens one an earlier run made 0700
+  as_root install -m755 "$src/src/usbmuxd" "$MUX_BIN"
+  mux_dropin | as_root install -m644 /dev/stdin "$MUX_DROPIN"
   mux_stamp "$MUX_BIN" >"$STATE/usbmuxd.stamp"
   as_root systemctl daemon-reload
   if as_root systemctl restart usbmuxd; then

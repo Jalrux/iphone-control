@@ -301,7 +301,10 @@ class Setup(unittest.TestCase):
         self.assertRegex(lines[5], "^ExecStart=" + re.escape(self.mux_bin) + r" --user \w+ --systemd$")
         self.assertEqual(sb.mode(self.dropin), 0o644)
         if os.geteuid() != 0:                             # root (CI containers) needs no sudo
-            self.assertIn(f"sudo install -D -m755 {src}/src/usbmuxd {self.mux_bin}", sb.calls("sudo"))
+            sudo = sb.calls("sudo")
+            self.assertIn(f"sudo install -m755 {src}/src/usbmuxd {self.mux_bin}", sudo)
+            d = os.path.dirname(self.dropin)              # made and opened first: uutils' install -D uses the umask
+            self.assertLess(sudo.index(f"sudo chmod 755 {d}"), sudo.index(f"sudo install -m644 /dev/stdin {self.dropin}"))
         self.assertEqual(sb.calls("systemctl"), ["systemctl daemon-reload", "systemctl restart usbmuxd"])
         with open(os.path.join(sb.state, "usbmuxd.stamp")) as f:
             self.assertEqual(f.read().strip(), f"{pin} {self.sha256(self.mux_bin)}")

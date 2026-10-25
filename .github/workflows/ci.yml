@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04             # setup-python has no 3.9 for ubuntu-latest (26.04)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -43,8 +43,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        python: ["3.9", "3.11", "3.12", "3.13"]
+        python: ["3.11", "3.12", "3.13"]
         include:
+          - os: ubuntu-24.04        # setup-python has no 3.9 for ubuntu-latest (26.04)
+            python: "3.9"
           - os: ubuntu-latest
             python: "3.12"
             slow: "1"               # also the ~60 s tunnel-timeout scenarios
