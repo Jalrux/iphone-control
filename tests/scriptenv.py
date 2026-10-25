@@ -21,7 +21,7 @@ import tempfile
 import textwrap
 import time
 
-from support import REPO, UDID_A, FakeMux, bundle_id, epoch, free_port, make_signed_ipa
+from support import REPO, UDID_A, FakeMux, bundle_id, epoch, free_ports, make_signed_ipa
 
 PY = sys.executable
 SYSTEM_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -324,8 +324,8 @@ class Sandbox:
         for d in (self.fake, self.fakebin, self.bin, self.config_home):
             os.makedirs(d, exist_ok=True)
         os.makedirs(self.xdg_run, mode=0o700)
-        self.wda_port, self.mjpeg_port, self.agent_port = free_port(), free_port(), free_port()
-        self.phone_wda_port, self.phone_mjpeg_port = free_port(), free_port()
+        (self.wda_port, self.mjpeg_port, self.agent_port, self.phone_wda_port,
+         self.phone_mjpeg_port) = free_ports(5)
         self.put("phone_wda_port", str(self.phone_wda_port))
         self.put("phone_mjpeg_port", str(self.phone_mjpeg_port))
         self.mux = FakeMux(devices, ports={8100: self.phone_wda_port, 9100: self.phone_mjpeg_port},

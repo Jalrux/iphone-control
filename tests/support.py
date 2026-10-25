@@ -30,6 +30,21 @@ def free_port():
         return s.getsockname()[1]
 
 
+def free_ports(n):
+    """n different free ports: every socket stays bound until all are chosen (one free_port() after another may
+    get the same port twice, which made the script tests' forward and fake WebDriverAgent collide on CI)."""
+    socks = []
+    try:
+        for _ in range(n):
+            s = socket.socket()
+            socks.append(s)
+            s.bind(("127.0.0.1", 0))
+        return [s.getsockname()[1] for s in socks]
+    finally:
+        for s in socks:
+            s.close()
+
+
 def _recv_exact(sock, n):
     buf = b""
     while len(buf) < n:

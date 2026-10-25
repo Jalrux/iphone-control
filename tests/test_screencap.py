@@ -933,9 +933,10 @@ class Signals(unittest.TestCase):
                 flag = StopFlag()
 
                 def at_each_bytecode(frame, event, arg):
+                    # every event, not only "opcode": Python 3.12 does not trace the opcodes of a frame that
+                    # turns f_trace_opcodes on in its own "call" event, and the wait would sleep its timeout
                     frame.f_trace_opcodes = True
-                    if event == "opcode":
-                        flag.set()
+                    flag.set()
                     return at_each_bytecode
                 sys.settrace(at_each_bytecode)
                 got = flag.wait(timeout)

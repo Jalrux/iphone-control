@@ -780,7 +780,7 @@ watchdog() {  # while the window is open: restart the capture, the forward, the 
       unlock=0   # a picture again: the next lock is told again
     fi
     back=0
-    [ "$MODE" = full ] && [ $wda = 1 ] || continue
+    if [ "$MODE" != full ] || [ $wda != 1 ]; then continue; fi
     alive fwd || start_fwd quiet || continue
     if alive wda; then   # alive but deaf for 15 s (e.g. the cable was pulled): restart it
       if wda_status >/dev/null; then silent=0; continue; fi
